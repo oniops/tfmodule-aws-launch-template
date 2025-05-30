@@ -5,7 +5,7 @@ tfmodule-aws-launch-template is terraform module which creates AWS EC2 Launch Te
 ## Git
 
 ```
-git clone https://code.bespinglobal.com/scm/op/tfmodule-aws-launch-template.git
+git clone https://github.com/oniops/tfmodule-aws-launch-template.git
 
 cd tfmodule-aws-launch-template
 ```
@@ -20,7 +20,83 @@ terraform apply
 
 ## Usage
 
-```
+
+### for EKS Node 
+
+```hcl
+locals {
+  cluster_name        = "demo-eks"
+  cluster_auth_base64 = "secret"
+  cluster_endpoint    = "https://api.me?"
+  cluster_dns_ip      = "1.2.1.1"
+  user_data           = <<EOF
+#!/bin/bash
+set -o xtrace
+/etc/eks/bootstrap.sh ${local.cluster_name} \
+  --b64-cluster-ca ${local.cluster_auth_base64} \
+  --apiserver-endpoint ${local.cluster_endpoint} \
+  --dns-cluster-ip ${local.cluster_dns_ip} \
+  --kubelet-extra-args '--node-labels=eks.amazonaws.com/nodegroup-image=${data.aws_ami.this.id}'
+  EOF
+}
+
+module "ctx" {
+  source = "git::https://github.com/oniops/tfmodule-context.git?ref=v1.0.0"
+  context = {
+    project     = "demo"
+    region      = "us-east-1"
+    environment = "Development"
+    owner       = "demo@opsnow.com"
+    department  = "DevOps Team"
+    customer    = "OpsNow. INC."
+    pri_domain  = "opsnow.local"
+    domain      = "demo.opsnow360.io"
+  }
+}
+
+data "aws_ami" "this" {
+  most_recent = true
+  filter {
+    name = "name"
+    values = ["amazon-eks-node-al2023-arm64-standard-1.30-*"]
+  }
+  filter {
+    name = "virtualization-type"
+    values = ["hvm"]
+  }
+  owners = ["self", "amazon"]
+}
+
+module "demo" {
+  source          = "git::https://github.com/oniops/tfmodule-aws-launch-template.git"
+  # source          = "../"
+  context         = module.ctx.context
+  name            = "demo"
+  description     = "demo for eks worker node"
+  default_version = 1
+  image_id        = data.aws_ami.this.id
+  user_data = base64encode(<<EOF
+#!/bin/bash
+set -o xtrace
+/etc/eks/bootstrap.sh ${local.cluster_name} \
+  --b64-cluster-ca ${local.cluster_auth_base64} \
+  --apiserver-endpoint ${local.cluster_endpoint} \
+  --dns-cluster-ip ${local.cluster_dns_ip} \
+  --kubelet-extra-args '--node-labels=eks.amazonaws.com/nodegroup-image=${data.aws_ami.this.id}'
+  EOF
+  )
+  block_device_mappings = [
+    {
+      device_name = "/dev/xvda"
+      volume_type = "gp3"
+      volume_size = 100
+      encrypted   = true
+      kms_key_id  = "arn:aws:kms:us-east-1:111122223333:key/sdjflsdjflsfdjl"
+    },
+  ]
+  security_group_ids = ["sg-12345"]
+
+}
 
 ```
 
